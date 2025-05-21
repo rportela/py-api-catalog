@@ -9,10 +9,9 @@ from sqlalchemy import (
     BigInteger,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import relationship
+from . import Base
 import uuid
-
-Base = declarative_base()
 
 
 class CatalogGroup(Base):

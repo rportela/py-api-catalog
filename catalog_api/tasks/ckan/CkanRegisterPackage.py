@@ -1,4 +1,4 @@
-from catalog_api.infrastructure.Ckan import CkanPackage
+from catalog_api.infrastructure.CkanApi import CkanPackage
 from .CkanRegisterGroup import CkanRegisterGroup
 
 

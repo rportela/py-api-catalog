@@ -1,6 +1,11 @@
 import boto3
 from typing import List, Dict, Any, Optional
 from botocore.exceptions import ClientError
+import logging
+from boto3.resources.factory import ServiceResource
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 class S3Bucket:
     """
@@ -31,10 +36,10 @@ class S3Bucket:
             })
         
         self.s3_client = boto3.client('s3', **session_params)
-        self.s3_resource = boto3.resource('s3', **session_params)
-        self.bucket = self.s3_resource.Bucket(bucket_name)
+        self.s3_resource: ServiceResource = boto3.resource('s3', **session_params)
+        self.bucket = self.s3_resource.Bucket(bucket_name) # type: ignore
         
-    def put_bytes(self, key: str, data: bytes, metadata: Optional[Dict[str, str]] = None) -> Dict:
+    def put_bytes(self, key: str, data: bytes, metadata: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
         Upload bytes data to S3.
         
@@ -45,6 +50,9 @@ class S3Bucket:
             
         Returns:
             Response from S3 put_object operation
+
+        Raises:
+            ClientError: If the upload fails
         """
         params = {
             'Bucket': self.bucket_name,
@@ -55,7 +63,13 @@ class S3Bucket:
         if metadata:
             params['Metadata'] = metadata
             
-        return self.s3_client.put_object(**params)
+        try:
+            response = self.s3_client.put_object(**params)
+            logger.info(f"Successfully uploaded object to {key} in bucket {self.bucket_name}.")
+            return response
+        except ClientError as e:
+            logger.error(f"Failed to upload object to {key} in bucket {self.bucket_name}: {e}")
+            raise
     
     def get_bytes(self, key: str) -> bytes:
         """
@@ -70,10 +84,15 @@ class S3Bucket:
         Raises:
             ClientError: If the object does not exist or other AWS error occurs
         """
-        response = self.s3_client.get_object(Bucket=self.bucket_name, Key=key)
-        return response['Body'].read()
+        try:
+            response = self.s3_client.get_object(Bucket=self.bucket_name, Key=key)
+            logger.info(f"Successfully retrieved object {key} from bucket {self.bucket_name}.")
+            return response['Body'].read()
+        except ClientError as e:
+            logger.error(f"Failed to retrieve object {key} from bucket {self.bucket_name}: {e}")
+            raise
     
-    def put_file(self, key: str, file_path: str, metadata: Optional[Dict[str, str]] = None) -> Dict:
+    def put_file(self, key: str, file_path: str, metadata: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """
         Upload a file to S3.
         
@@ -83,11 +102,20 @@ class S3Bucket:
             metadata: Optional metadata dictionary
             
         Returns:
-            Response from S3 upload_file operation
+            Response with key and bucket name
+
+        Raises:
+            ClientError: If the upload fails
         """
-        extra_args = {'Metadata': metadata} if metadata else None
-        self.s3_client.upload_file(file_path, self.bucket_name, key, ExtraArgs=extra_args)
-        return {"Key": key, "Bucket": self.bucket_name}
+        extra_args = {'Metadata': metadata} if metadata else {}
+
+        try:
+            self.s3_client.upload_file(file_path, self.bucket_name, key, ExtraArgs=extra_args)
+            logger.info(f"Successfully uploaded file {file_path} to {key} in bucket {self.bucket_name}.")
+            return {"Key": key, "Bucket": self.bucket_name}
+        except ClientError as e:
+            logger.error(f"Failed to upload file {file_path} to {key} in bucket {self.bucket_name}: {e}")
+            raise
     
     def get_file(self, key: str, file_path: str) -> None:
         """
@@ -201,9 +229,18 @@ class S3Bucket:
             
         Returns:
             Presigned URL string
+
+        Raises:
+            ClientError: If the URL generation fails
         """
-        return self.s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': self.bucket_name, 'Key': key},
-            ExpiresIn=expiration
-        )
+        try:
+            url = self.s3_client.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': self.bucket_name, 'Key': key},
+                ExpiresIn=expiration
+            )
+            logger.info(f"Successfully generated presigned URL for {key} in bucket {self.bucket_name}.")
+            return url
+        except ClientError as e:
+            logger.error(f"Failed to generate presigned URL for {key} in bucket {self.bucket_name}: {e}")
+            raise

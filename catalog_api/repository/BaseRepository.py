@@ -2,13 +2,14 @@ import os
 from typing import Type, TypeVar, Generic, Optional, List, Callable, Any
 from sqlalchemy import create_engine, asc, desc
 from sqlalchemy.orm import sessionmaker, Session
-from ..models.CatalogModels import Base
+from catalog_api.models import Base
+from contextlib import contextmanager
 
 
 def create_sqlalchemy():
-    DATABASE_URL = os.getenv("ALCHEMY_URL")
-    assert DATABASE_URL is not None, "Database URL cannot be None"
-    return create_engine(DATABASE_URL)
+    ALCHEMY_URL = os.getenv("ALCHEMY_URL")
+    assert ALCHEMY_URL is not None, "Database URL cannot be None"
+    return create_engine(ALCHEMY_URL)
 
 
 SQLENGINE = create_sqlalchemy()
@@ -25,6 +26,20 @@ def get_session() -> Session:
     if db_session is None:
         db_session = SessionLocal()
     return db_session
+
+
+@contextmanager
+def session_scope():
+    """Provide a transactional scope around a series of operations."""
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
+    finally:
+        session.close()
 
 
 T = TypeVar("T")
@@ -46,21 +61,23 @@ class BaseRepository(Generic[T]):
         return self._session.query(self._model).offset(skip).limit(limit).all()
 
     def create(self, data: dict) -> T:
-        obj = self._model(**data)
-        self._session.add(obj)
-        self._session.commit()
-        self._session.refresh(obj)
-        return obj
+        with session_scope() as session:
+            obj = self._model(**data)
+            session.add(obj)
+            session.commit()
+            session.refresh(obj)
+            return obj
 
     def update(self, obj_id, updates: dict) -> Optional[T]:
-        obj = self.get(obj_id)
-        if not obj:
-            return None
-        for key, value in updates.items():
-            setattr(obj, key, value)
-        self._session.commit()
-        self._session.refresh(obj)
-        return obj
+        with session_scope() as session:
+            obj = session.get(self._model, obj_id)
+            if not obj:
+                return None
+            for key, value in updates.items():
+                setattr(obj, key, value)
+            session.commit()
+            session.refresh(obj)
+            return obj
 
     def delete(self, obj_id) -> bool:
         obj = self.get(obj_id)

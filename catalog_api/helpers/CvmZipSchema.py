@@ -1,4 +1,4 @@
-from io import BufferedReader, BytesIO, TextIOWrapper
+from io import BytesIO
 from typing import List, Optional
 from zipfile import ZipFile
 

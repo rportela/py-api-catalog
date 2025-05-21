@@ -5,6 +5,12 @@ from io import BytesIO
 from typing import List, Optional
 from zipfile import ZipFile
 
+from catalog_api.helpers.SchemaHelper import (
+    CatalogColumnHelper,
+    CatalogTableHelper,
+    SchemaHelper,
+)
+
 
 _KV_LINE = re.compile(r"^\s*(.+?)\s*:\s*(.*)$")
 

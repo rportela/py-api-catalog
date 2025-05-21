@@ -3,8 +3,8 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 from sqlalchemy import UUID
 
-from portela_dev.infrastructure.Ckan import CkanOrganization, CkanPackage, CkanResource
-from portela_dev.repo.CatalogModels import (
+
+from models.CatalogModels import (
     CatalogDataset,
     CatalogGroup,
     CatalogLicense,
