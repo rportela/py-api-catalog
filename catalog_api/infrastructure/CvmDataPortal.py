@@ -1,15 +1,10 @@
-from io import BufferedReader, BytesIO, TextIOWrapper
+import requests
+import re
+
+from io import BytesIO
 from typing import List, Optional
 from zipfile import ZipFile
 
-import requests
-from .SchemaHelper import (
-    CatalogColumnHelper,
-    CatalogTableHelper,
-    SchemaHelper,
-)
-
-import re
 
 _KV_LINE = re.compile(r"^\s*(.+?)\s*:\s*(.*)$")
 

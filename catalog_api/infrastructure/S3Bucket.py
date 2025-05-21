@@ -1,8 +1,6 @@
 import boto3
-import io
-from typing import List, Dict, Any, Optional, Union, BinaryIO
+from typing import List, Dict, Any, Optional
 from botocore.exceptions import ClientError
-import logging
 
 class S3Bucket:
     """
