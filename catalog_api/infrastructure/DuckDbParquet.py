@@ -16,7 +16,9 @@ import importlib.metadata
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence, Union
 
+import boto3
 import duckdb
+from botocore.exceptions import ClientError
 
 __all__ = ["ParquetRepository"]
 
@@ -78,6 +80,37 @@ class ParquetRepository:
     def close(self) -> None:  # noqa: D401
         """Close the underlying DuckDB connection."""
         self._con.close()
+
+    def query_partition(self, sql: str, partition_filters: dict[str, str], *params) -> list[tuple[Any, ...]]:
+        """Run *sql* on a specific partition and return a list of DuckDB `Row` objects."""
+        partition_clause = " AND ".join([f"{key}='{value}'" for key, value in partition_filters.items()])
+        sql_with_partition = f"{sql} WHERE {partition_clause}"
+        return self._con.execute(sql_with_partition, params).fetchall()
+
+    def update_partition(self, partition_filters: dict[str, str], updates: dict[str, Any]) -> None:
+        """Update data in a specific partition based on filters."""
+        partition_clause = " AND ".join([f"{key}='{value}'" for key, value in partition_filters.items()])
+        update_clause = ", ".join([f"{key}='{value}'" for key, value in updates.items()])
+        sql = f"UPDATE parquet SET {update_clause} WHERE {partition_clause}"
+        self._con.execute(sql)
+
+    def list_partitions(self, s3_bucket: str, prefix: str) -> list[str]:
+        """List all partitions in the S3 bucket following the Hive format."""
+        s3_client = boto3.client('s3')
+        try:
+            response = s3_client.list_objects_v2(Bucket=s3_bucket, Prefix=prefix)
+            partitions = [obj['Key'] for obj in response.get('Contents', []) if obj['Key'].endswith('.parquet')]
+            return partitions
+        except ClientError as e:
+            print(f"Error listing partitions: {e}")
+            return []
+
+    def attach_partition(self, s3_path: str, partition_name: str) -> None:
+        """Attach a specific partition to the DuckDB instance."""
+        self._con.execute(
+            f"CREATE OR REPLACE VIEW {partition_name} AS SELECT * FROM read_parquet(?)",
+            [s3_path],
+        )
 
     # ------------------------------------------------------------------
     # Private helpers

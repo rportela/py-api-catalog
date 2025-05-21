@@ -2,3 +2,5 @@ fastapi[standard]
 supabase
 chromadb
 SQLAlchemy
+boto3
+psycopg2-binary
