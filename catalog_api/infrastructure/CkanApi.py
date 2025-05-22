@@ -137,3 +137,18 @@ class CkanApi:
         if not isinstance(package_ids, list):
             raise TypeError("Expected a list of package IDs in the response.")
         return package_ids
+
+    def list_groups(self) -> List[str]:
+        """
+        List all groups in the CKAN instance.
+
+        :return: A list of group IDs.
+        """
+        url = f"{self.api_url}/group_list"
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        data = response.json()
+        group_ids = data.get("result", [])
+        if not isinstance(group_ids, list):
+            raise TypeError("Expected a list of group IDs in the response.")
+        return group_ids

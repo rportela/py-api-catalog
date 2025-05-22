@@ -42,25 +42,65 @@ def session_scope():
         session.close()
 
 
+# Define a generic type variable for the model class
 T = TypeVar("T")
 
 
 class BaseRepository(Generic[T]):
+    """
+    Base repository class for SQLAlchemy models.
 
-    _session: Session
-    _model: Type[T]
+    Provides common CRUD operations and a custom query method.
+    """
+
+    _session: Session  # SQLAlchemy session instance
+    _model: Type[T]  # SQLAlchemy model class
 
     def __init__(self, model: Type[T]):
+        """
+        Initialize the repository with a specific model class.
+
+        Args:
+            model (Type[T]): The SQLAlchemy model class to be used by the repository.
+        """
         self._session = get_session()
         self._model = model
 
-    def get(self, obj_id) -> Optional[T]:
+    def get(self, obj_id: Any) -> Optional[T]:
+        """
+        Retrieve an object by its primary key.
+
+        Args:
+            obj_id (Any): The primary key of the object to retrieve.
+
+        Returns:
+            Optional[T]: The retrieved object or None if not found.
+        """
         return self._session.get(self._model, obj_id)
 
     def list(self, skip: int = 0, limit: int = 100) -> List[T]:
+        """
+        Retrieve a list of objects with optional pagination.
+
+        Args:
+            skip (int): Number of records to skip. Defaults to 0.
+            limit (int): Maximum number of records to return. Defaults to 100.
+
+        Returns:
+            List[T]: A list of retrieved objects.
+        """
         return self._session.query(self._model).offset(skip).limit(limit).all()
 
     def create(self, data: dict) -> T:
+        """
+        Create a new object in the database.
+
+        Args:
+            data (dict): A dictionary of data to initialize the object.
+
+        Returns:
+            T: The created object.
+        """
         with session_scope() as session:
             obj = self._model(**data)
             session.add(obj)
@@ -68,7 +108,17 @@ class BaseRepository(Generic[T]):
             session.refresh(obj)
             return obj
 
-    def update(self, obj_id, updates: dict) -> Optional[T]:
+    def update(self, obj_id: Any, updates: dict) -> Optional[T]:
+        """
+        Update an existing object in the database.
+
+        Args:
+            obj_id (Any): The primary key of the object to update.
+            updates (dict): A dictionary of fields to update.
+
+        Returns:
+            Optional[T]: The updated object or None if not found.
+        """
         with session_scope() as session:
             obj = session.get(self._model, obj_id)
             if not obj:
@@ -79,7 +129,16 @@ class BaseRepository(Generic[T]):
             session.refresh(obj)
             return obj
 
-    def delete(self, obj_id) -> bool:
+    def delete(self, obj_id: Any) -> bool:
+        """
+        Delete an object from the database.
+
+        Args:
+            obj_id (Any): The primary key of the object to delete.
+
+        Returns:
+            bool: True if the object was deleted, False if not found.
+        """
         obj = self.get(obj_id)
         if not obj:
             return False
@@ -96,16 +155,17 @@ class BaseRepository(Generic[T]):
         limit: int = 100,
     ) -> List[T]:
         """
-        Custom query method with filtering, sorting, offset and limit.
+        Perform a custom query with filtering, sorting, offset, and limit.
 
-        Example usage:
-            repo.query(
-                filter_fn=lambda session: session.query(Model).filter(Model.name == 'something'),
-                sort_by="created",
-                sort_desc=True,
-                skip=10,
-                limit=20
-            )
+        Args:
+            filter_fn (Optional[Callable[[Any], Any]]): A function to apply filters to the query.
+            sort_by (Optional[str]): The field to sort by.
+            sort_desc (bool): Whether to sort in descending order. Defaults to False.
+            skip (int): Number of records to skip. Defaults to 0.
+            limit (int): Maximum number of records to return. Defaults to 100.
+
+        Returns:
+            List[T]: A list of retrieved objects.
         """
         query = self._session.query(self._model)
 
