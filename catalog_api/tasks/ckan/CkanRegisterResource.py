@@ -1,14 +1,15 @@
-from catalog_api.services.CatalogService import CatalogService
 from catalog_api.infrastructure.CkanApi import CkanResource
 from catalog_api.models.CatalogModels import CatalogDataset
 from datetime import datetime
 
+from catalog_api.services.ResourceService import ResourceService
+
 class CkanRegisterResource:
-    def __init__(self, service: CatalogService):
-        self.service = service
+    def __init__(self):
+        self.service = ResourceService()
 
     def execute(self, dataset: CatalogDataset, resource: CkanResource):
-        res = self.service.query_resources_by_id(resource.id)
+        res = self.service.get_by_id(resource.id)
         if not res:
             res = self.service.create_resource(
                 {

@@ -1,16 +1,19 @@
-from catalog_api.services.CatalogGroupService import CatalogGroupService
 from catalog_api.infrastructure.CkanApi import CkanOrganization
 from catalog_api.models.CatalogModels import CatalogGroup
 from datetime import datetime
 
+from catalog_api.services.GroupService import GroupService
+
 
 class CkanRegisterGroup:
-    def __init__(self, service: CatalogGroupService):
-        self.service = service
+    def __init__(self):
+        self.service = GroupService()
 
-    def execute(self, country_code: str, org_type: str, org: CkanOrganization) -> CatalogGroup:
+    def execute(
+        self, country_code: str, org_type: str, org: CkanOrganization
+    ) -> CatalogGroup:
         catalog_name = f"{country_code}_{org_type}_{org.name.lower().replace(' ', '_')}"
-        groups = self.service.query_groups_by_name(catalog_name)
+        groups = self.service.get(catalog_name)
         group = groups[0] if len(groups) > 0 else None
         if group:
             return group

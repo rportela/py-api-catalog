@@ -3,42 +3,37 @@
 Typical usage:
 
 >>> repo = ParquetRepository(
-...     parquet_locations=["s3://warehouse/sales_*.parquet"],
-...     threads=4,
+...     s3_bucket=my_s3_bucket_instance,
+...     parquet_prefix="warehouse/sales_",
+...     duckdb_path=":memory:",
 ... )
->>> rows = repo.query("SELECT country, SUM(gross) FROM parquet GROUP BY country")
+>>> rows = repo.query("SELECT country, SUM(gross) FROM sales GROUP BY country")
 >>> repo.close()
 """
 
 from __future__ import annotations
 
 import importlib.metadata
-from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence, Union
 
-import boto3
 import duckdb
-from botocore.exceptions import ClientError
+
+from .S3Bucket import S3Bucket
 
 __all__ = ["ParquetRepository"]
 
-RemotePath = str  # e.g. "s3://bucket/key" or "https://host/object"
-LocalPath = Union[str, Path]
-
 
 class ParquetRepository:
-    """Embed DuckDB and expose a simple query interface over Parquet files.
+    """Interface for querying Parquet files stored in S3 using DuckDB.
 
     Parameters
     ----------
-    parquet_locations
-        One or more glob patterns (local) *or* absolute URLs to Parquet files.
-    threads
-        Number of worker threads DuckDB should use. `None` → DuckDB default.
-    read_only
-        If *True*, the temporary DuckDB catalog will be deleted on close().
+    s3_bucket
+        An instance of the S3Bucket class.
+    parquet_prefix
+        The S3 prefix where Parquet files are stored.
     duckdb_path
-        Optional persistent DuckDB file; skips catalog rebuild between runs.
+        Path to the DuckDB database file.
     duckdb_extensions
         Extra extensions to load (e.g. ["httpfs", "postgres_scanner"]).
     httpfs_headers
@@ -48,18 +43,26 @@ class ParquetRepository:
 
     def __init__(
         self,
-        parquet_locations: Sequence[RemotePath | LocalPath],
-        *,
-        threads: int | None = None,
-        read_only: bool = True,
-        duckdb_path: LocalPath | None = None,
+        s3_bucket: S3Bucket,
+        parquet_prefix: str,
+        duckdb_path: str,
         duckdb_extensions: Iterable[str] = ("httpfs",),
         httpfs_headers: Mapping[str, str] | None = None,
     ) -> None:
-        assert duckdb_path is not None, "duckdb_path must be set"
-        self._con = duckdb.connect(duckdb_path, read_only=read_only)
-        self._configure(threads, duckdb_extensions, httpfs_headers)
-        self._attach_parquet(parquet_locations)
+        """
+        Initialize the repository.
+
+        Args:
+            s3_bucket: An instance of the S3Bucket class.
+            parquet_prefix: The S3 prefix where Parquet files are stored.
+            duckdb_path: Path to the DuckDB database file.
+        """
+        self.s3_bucket = s3_bucket
+        self.parquet_prefix = parquet_prefix
+        self.duckdb_path = duckdb_path
+        self._con = duckdb.connect(duckdb_path)
+        self._configure(duckdb_extensions, httpfs_headers)
+        self._attach_parquet_files()
 
     # ---------------------------------------------------------------------
     # Public API
@@ -81,66 +84,34 @@ class ParquetRepository:
         """Close the underlying DuckDB connection."""
         self._con.close()
 
-    def query_partition(self, sql: str, partition_filters: dict[str, str], *params) -> list[tuple[Any, ...]]:
-        """Run *sql* on a specific partition and return a list of DuckDB `Row` objects."""
-        partition_clause = " AND ".join([f"{key}='{value}'" for key, value in partition_filters.items()])
-        sql_with_partition = f"{sql} WHERE {partition_clause}"
-        return self._con.execute(sql_with_partition, params).fetchall()
-
-    def update_partition(self, partition_filters: dict[str, str], updates: dict[str, Any]) -> None:
-        """Update data in a specific partition based on filters."""
-        partition_clause = " AND ".join([f"{key}='{value}'" for key, value in partition_filters.items()])
-        update_clause = ", ".join([f"{key}='{value}'" for key, value in updates.items()])
-        sql = f"UPDATE parquet SET {update_clause} WHERE {partition_clause}"
-        self._con.execute(sql)
-
-    def list_partitions(self, s3_bucket: str, prefix: str) -> list[str]:
-        """List all partitions in the S3 bucket following the Hive format."""
-        s3_client = boto3.client('s3')
-        try:
-            response = s3_client.list_objects_v2(Bucket=s3_bucket, Prefix=prefix)
-            partitions = [obj['Key'] for obj in response.get('Contents', []) if obj['Key'].endswith('.parquet')]
-            return partitions
-        except ClientError as e:
-            print(f"Error listing partitions: {e}")
-            return []
-
-    def attach_partition(self, s3_path: str, partition_name: str) -> None:
-        """Attach a specific partition to the DuckDB instance."""
-        self._con.execute(
-            f"CREATE OR REPLACE VIEW {partition_name} AS SELECT * FROM read_parquet(?)",
-            [s3_path],
-        )
-
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
     def _configure(
         self,
-        threads: int | None,
         duckdb_extensions: Iterable[str],
         httpfs_headers: Mapping[str, str] | None,
     ) -> None:
-        if threads is not None:
-            self._con.execute("PRAGMA threads = ?", [threads])
         for ext in duckdb_extensions:
             self._con.execute(f"INSTALL {ext}; LOAD {ext};")
         if httpfs_headers:
             hdrs = ",".join([f"{k}:{v}" for k, v in httpfs_headers.items()])
             self._con.execute("SET httpfs_headers=?", [hdrs])
 
-    def _attach_parquet(self, parquet_locations):  # noqa: ANN001
-        # Register each location as a *view* named after the stem, or "parquet"
-        default_view = "parquet"
-        for loc in parquet_locations:
-            view_name = (
-                Path(loc).stem.replace("*", "") or default_view  # local path
-                if "//" not in str(loc)
-                else default_view  # URL → generic
-            )
+    def _attach_parquet_files(self) -> None:
+        """Attach all Parquet files in the S3 prefix to the DuckDB instance."""
+        parquet_files = [
+            obj["key"]
+            for obj in self.s3_bucket.list_objects(prefix=self.parquet_prefix)
+            if obj["key"].endswith(".parquet")
+        ]
+
+        for file_key in parquet_files:
+            s3_url = f"s3://{self.s3_bucket.bucket_name}/{file_key}"
+            view_name = file_key.split("/")[-1].replace(".parquet", "")
             self._con.execute(
                 f"CREATE OR REPLACE VIEW {view_name} AS SELECT * FROM read_parquet(?)",
-                [str(loc)],
+                [s3_url],
             )
 
     # ------------------------------------------------------------------
