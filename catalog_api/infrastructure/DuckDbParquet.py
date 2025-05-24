@@ -14,16 +14,16 @@ Typical usage:
 from __future__ import annotations
 
 import importlib.metadata
-from typing import Any, Iterable, Mapping, Sequence, Union
+from typing import Any, Iterable, Mapping
 
 import duckdb
 
 from .S3Bucket import S3Bucket
 
-__all__ = ["ParquetRepository"]
+__all__ = ["DuckDbParquet"]
 
 
-class ParquetRepository:
+class DuckDbParquet:
     """Interface for querying Parquet files stored in S3 using DuckDB.
 
     Parameters

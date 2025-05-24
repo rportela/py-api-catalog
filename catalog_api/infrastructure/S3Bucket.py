@@ -289,25 +289,32 @@ class S3Bucket:
 
         Returns:
             The last modified date of the file as a datetime object, or None if the file does not exist.
+        """
+        if not self.object_exists(key):
+            logger.info(f"The file {key} does not exist in bucket {self.bucket_name}.")
+            return None
+        response = self.s3_client.head_object(Bucket=self.bucket_name, Key=key)
+        last_modified = response.get("LastModified")
+        logger.info(
+            f"The last updated date of the file {key} in bucket {self.bucket_name} is {last_modified}."
+        )
+        return last_modified
 
-        Raises:
-            ClientError: If there is an error accessing the file.
+    def file_exists(self, key: str) -> bool:
+        """
+        Checks if a file exists in the S3 bucket.
+
+        Args:
+            key: S3 object key (path)
+
+        Returns:
+            True if the file exists, False otherwise.
         """
         try:
-            response = self.s3_client.head_object(Bucket=self.bucket_name, Key=key)
-            last_modified = response.get("LastModified")
-
-            if last_modified:
-                logger.info(
-                    f"The last updated date of the file {key} in bucket {self.bucket_name} is {last_modified}."
-                )
-                return last_modified
-            else:
-                logger.info(f"The file {key} does not exist in bucket {self.bucket_name}.")
-                return None
-
+            self.s3_client.head_object(Bucket=self.bucket_name, Key=key)
+            return True
         except ClientError as e:
-            logger.error(
-                f"Failed to get the last updated date of the file {key} in bucket {self.bucket_name}: {e}"
-            )
-            raise
+            if e.response["Error"]["Code"] == "404":
+                return False
+            else:
+                raise
