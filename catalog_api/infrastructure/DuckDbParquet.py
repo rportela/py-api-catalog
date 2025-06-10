@@ -45,7 +45,7 @@ class DuckDbParquet:
         self,
         s3_bucket: S3Bucket,
         parquet_prefix: str,
-        duckdb_path: str,
+        duckdb_path: str = ":memory:",
         duckdb_extensions: Iterable[str] = ("httpfs",),
         httpfs_headers: Mapping[str, str] | None = None,
     ) -> None:
@@ -55,7 +55,9 @@ class DuckDbParquet:
         Args:
             s3_bucket: An instance of the S3Bucket class.
             parquet_prefix: The S3 prefix where Parquet files are stored.
-            duckdb_path: Path to the DuckDB database file.
+            duckdb_path: Path to the DuckDB database file. Defaults to in-memory (":memory:").
+        Note:
+            The DuckDB database is always in-memory by default. All Parquet files are attached from S3 storage as views.
         """
         self.s3_bucket = s3_bucket
         self.parquet_prefix = parquet_prefix
