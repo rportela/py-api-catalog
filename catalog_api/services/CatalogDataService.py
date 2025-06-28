@@ -1,10 +1,13 @@
 from datetime import datetime
 from io import BytesIO
+import logging
 from typing import Any, Dict, Optional
 
 import pandas as pd
 from catalog_api.infrastructure.DuckDbParquet import DuckDbParquet
 from catalog_api.infrastructure.S3Bucket import S3Bucket
+
+logger = logging.getLogger(__name__)
 
 
 class CatalogDataService:
@@ -12,14 +15,14 @@ class CatalogDataService:
     CatalogDataService is a service class that provides methods to interact with the catalog data.
     """
 
-    _bucket = S3Bucket()
+    _bucket = S3Bucket(region_name="sa-east-1")
 
     def __init__(self):
         """
         Initializes the CatalogDataService with the provided catalog data.
         :param catalog_data: The catalog data to be used by the service.
         """
-        self._bucket = S3Bucket()
+        self._bucket = S3Bucket(region_name="sa-east-1")
 
     def get_parquet_path(
         self,
@@ -64,28 +67,32 @@ class CatalogDataService:
         :param partitions: Optional dictionary of partitions.
         :return: The response from the S3 upload.
         """
+        # Make a copy of the DataFrame to avoid modifying the original
+        df_to_save = df.copy()
+        
         if partitions:
+            # Add partition columns to the DataFrame
+            for partition_key, partition_value in partitions.items():
+                df_to_save[partition_key] = partition_value
+            
             # Write partitioned parquet file to the correct S3 path
             file_path = self.get_parquet_path(organization, dataset, table, partitions)
         else:
             file_path = self.get_parquet_path(organization, dataset, table)
+        
         pq = BytesIO()
-        df.to_parquet(pq, index=False, compression="snappy")
+        df_to_save.to_parquet(pq, index=False, compression="snappy")
         pq.seek(0)
         return self._bucket.put_bytes(file_path, pq.getvalue())
 
     def _list_files(self, prefix: str) -> list:
         """
         List all files under a given prefix in the S3 bucket.
-        This method assumes S3Bucket has a method to list files. If not, implement it accordingly.
         :param prefix: The prefix to search under.
         :return: List of file paths.
         """
-        # You must implement this method in S3Bucket or adapt this call to your S3 client
-        if hasattr(self._bucket, 'list_files'):
-            return self._bucket.list_files(prefix)
-        else:
-            raise NotImplementedError("S3Bucket.list_files(prefix) is not implemented. Please add this method.")
+        objects = self._bucket.list_objects(prefix=prefix, delimiter="")
+        return [obj["key"] for obj in objects if obj.get("type") == "file"]
 
     def list_partition_paths(
         self,
@@ -196,4 +203,25 @@ class CatalogDataService:
         :return: A DuckDbParquet instance.
         """
         parquet_prefix = f"catalog-data/{organization}/{dataset}/{table}/"
+        return DuckDbParquet(s3_bucket=self._bucket, parquet_prefix=parquet_prefix)
+
+    def get_duckdb_for_partitions(self, organization: str, dataset: str, table: str, partitions: dict[str, str]) -> DuckDbParquet:
+        """
+        Returns a DuckDbParquet instance for querying specific partitions only.
+        This enables true partition pruning by only loading files from the specified partitions.
+        
+        :param organization: The organization name.
+        :param dataset: The dataset name.
+        :param table: The table name.
+        :param partitions: Dictionary of partition key-value pairs (e.g., {"year": "2025", "month": "01"})
+        :return: A DuckDbParquet instance configured for the specific partitions.
+        """
+        # Build partition path
+        partition_path = ""
+        for key, value in partitions.items():
+            partition_path += f"{key}={value}/"
+        
+        # Create prefix for the specific partitions
+        parquet_prefix = f"catalog-data/{organization}/{dataset}/{table}/{partition_path}"
+        
         return DuckDbParquet(s3_bucket=self._bucket, parquet_prefix=parquet_prefix)

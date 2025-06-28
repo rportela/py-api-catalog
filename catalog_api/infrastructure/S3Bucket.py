@@ -16,6 +16,11 @@ class S3Bucket:
     Provides methods to read, write, list, and manage objects in S3.
     """
 
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    bucket_name: Optional[str] = None
+    region_name: Optional[str] = None
+
     def __init__(
         self,
         bucket_name: Optional[str] = None,
@@ -39,12 +44,21 @@ class S3Bucket:
                 "Bucket name must be provided or set in environment variable S3_BUCKET_NAME"
             )
         self.bucket_name = bucket_name
+        self.aws_access_key_id = aws_access_key_id
+        self.aws_secret_access_key = aws_secret_access_key
+        self.region_name = region_name or "sa-east-1"  # Default to sa-east-1
+        
         if aws_access_key_id is None:
             aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
         if aws_secret_access_key is None:
             aws_secret_access_key = os.getenv("AWS_ACCESS_KEY_SECRET")
+        
+        # Store the actual credentials being used
+        self.aws_access_key_id = aws_access_key_id
+        self.aws_secret_access_key = aws_secret_access_key
+        
         # Initialize S3 client
-        session_params = {"region_name": region_name} if region_name else {}
+        session_params = {"region_name": self.region_name}
         if aws_access_key_id and aws_secret_access_key:
             session_params.update(
                 {
@@ -81,7 +95,7 @@ class S3Bucket:
 
         try:
             response = self.s3_client.put_object(**params)
-            logger.info(
+            logger.debug(
                 f"Successfully uploaded object to {key} in bucket {self.bucket_name}."
             )
             return response
@@ -106,7 +120,7 @@ class S3Bucket:
         """
         try:
             response = self.s3_client.get_object(Bucket=self.bucket_name, Key=key)
-            logger.info(
+            logger.debug(
                 f"Successfully retrieved object {key} from bucket {self.bucket_name}."
             )
             return response["Body"].read()
@@ -139,7 +153,7 @@ class S3Bucket:
             self.s3_client.upload_file(
                 file_path, self.bucket_name, key, ExtraArgs=extra_args
             )
-            logger.info(
+            logger.debug(
                 f"Successfully uploaded file {file_path} to {key} in bucket {self.bucket_name}."
             )
             return {"Key": key, "Bucket": self.bucket_name}
@@ -270,7 +284,7 @@ class S3Bucket:
                 Params={"Bucket": self.bucket_name, "Key": key},
                 ExpiresIn=expiration,
             )
-            logger.info(
+            logger.debug(
                 f"Successfully generated presigned URL for {key} in bucket {self.bucket_name}."
             )
             return url
@@ -291,11 +305,11 @@ class S3Bucket:
             The last modified date of the file as a datetime object, or None if the file does not exist.
         """
         if not self.object_exists(key):
-            logger.info(f"The file {key} does not exist in bucket {self.bucket_name}.")
+            logger.debug(f"The file {key} does not exist in bucket {self.bucket_name}.")
             return None
         response = self.s3_client.head_object(Bucket=self.bucket_name, Key=key)
         last_modified = response.get("LastModified")
-        logger.info(
+        logger.debug(
             f"The last updated date of the file {key} in bucket {self.bucket_name} is {last_modified}."
         )
         return last_modified
